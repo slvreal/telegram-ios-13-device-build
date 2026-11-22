@@ -1,0 +1,53 @@
+name: Build Telegram 13.0 for iPhone
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: TelegramMessenger/Telegram-iOS
+          ref: f1dd7a2dbd02cbbf513e75d5695d8d36d1cf5838
+          submodules: recursive
+          persist-credentials: false
+      - name: Select release toolchain
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
+          df -h .
+      - name: Build ARM64 IPA from Telegram's public release configuration
+        run: |
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py build \
+            --configurationPath=build-system/appstore-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber=35303
+      - name: Verify device binary and archive
+        run: |
+          mkdir -p "$RUNNER_TEMP/telegram-verify"
+          cp -L bazel-bin/Telegram/Telegram.ipa "$RUNNER_TEMP/Telegram-13.0-arm64.ipa"
+          cd "$RUNNER_TEMP/telegram-verify"
+          unzip -q "$RUNNER_TEMP/Telegram-13.0-arm64.ipa"
+          app=(Payload/*.app)
+          plist="${app[0]}/Info.plist"
+          test "$(plutil -extract CFBundleShortVersionString raw "$plist")" = 13.0
+          test "$(plutil -extract CFBundleSupportedPlatforms.0 raw "$plist")" = iPhoneOS
+          exe="${app[0]}/$(plutil -extract CFBundleExecutable raw "$plist")"
+          lipo -verify_arch arm64 "$exe"
+          otool -l "$exe" | awk '$1=="cryptid" && $2!=0 {exit 1}'
+          shasum -a 256 "$RUNNER_TEMP/Telegram-13.0-arm64.ipa"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-13.0-arm64
+          path: ${{ runner.temp }}/Telegram-13.0-arm64.ipa
+          if-no-files-found: error
+          retention-days: 7
