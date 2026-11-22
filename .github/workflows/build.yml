@@ -41,6 +41,12 @@ jobs:
           old = "if (platform_prerequisites.platform.is_device and\n        rule_descriptor.requires_signing_for_device and"
           assert old in text
           p.write_text(text.replace(old, old.replace("platform.is_device and", 'platform.is_device and\n        "disable_legacy_signing" not in platform_prerequisites.features and')))
+          # Use the same static onboarding path as the ARM64 simulator.
+          path = Path("submodules/RMIntro/Sources/platform/ios/RMIntroViewController.m")
+          text = path.read_text()
+          original = "#if TARGET_OS_SIMULATOR && defined(__aarch64__)\n    return;\n#endif"
+          assert text.count(original) == 1
+          path.write_text(text.replace(original, "    return; // ASoftware cannot render the OpenGL intro."))
           PY
           python3 -u build-system/Make/Make.py build \
             --configurationPath=build-system/appstore-configuration.json \
@@ -60,6 +66,10 @@ jobs:
           exe="${app[0]}/$(plutil -extract CFBundleExecutable raw "$plist")"
           lipo "$exe" -verify_arch arm64
           otool -l "$exe" | awk '$1=="cryptid" && $2!=0 {exit 1}'
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict><key>com.apple.security.application-groups</key><array><string>group.ph.telegra.Telegraph</string></array></dict></plist>' > "$RUNNER_TEMP/Telegram.entitlements"
+          codesign --force --sign - --entitlements "$RUNNER_TEMP/Telegram.entitlements" "${app[0]}"
+          rm "$RUNNER_TEMP/Telegram-13.0-arm64.ipa"
+          ditto -c -k --keepParent Payload "$RUNNER_TEMP/Telegram-13.0-arm64.ipa"
           shasum -a 256 "$RUNNER_TEMP/Telegram-13.0-arm64.ipa"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
