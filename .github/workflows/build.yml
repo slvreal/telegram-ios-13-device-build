@@ -25,7 +25,7 @@ jobs:
           df -h .
       - name: Build ARM64 IPA from Telegram's public release configuration
         run: |
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          printf '\nbuild --//Telegram:disableProvisioningProfiles\nbuild --features=disable_legacy_signing\n' >> .bazelrc
           python3 -u build-system/Make/Make.py build \
             --configurationPath=build-system/appstore-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
