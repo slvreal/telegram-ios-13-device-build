@@ -1,0 +1,34 @@
+name: Restore Telegram app-group entitlement
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: macos-26
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Telegram-13.0-arm64
+          run-id: 45022578939
+          github-token: ${{ github.token }}
+      - name: Restore the main app entitlement omitted by unsigned packaging
+        run: |
+          unzip -q Telegram-13.0-arm64.ipa
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          app = Path("Payload/Telegram.app")
+          bundle = plistlib.loads((app / "Info.plist").read_bytes())["CFBundleIdentifier"]
+          with open("Telegram.entitlements", "wb") as f:
+              plistlib.dump({"com.apple.security.application-groups": ["group." + bundle]}, f)
+          PY
+          codesign --force --sign - --entitlements Telegram.entitlements Payload/Telegram.app
+          codesign -d --entitlements - Payload/Telegram.app
+          ditto -c -k --keepParent Payload Telegram-13.0-app-group.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Telegram-13.0-app-group
+          path: Telegram-13.0-app-group.ipa
+          if-no-files-found: error
